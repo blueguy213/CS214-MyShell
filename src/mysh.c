@@ -17,7 +17,6 @@ char *prompt; // The prompt to be displayed to the user
 char *curr_dir; // The current working directory of the shell program
 int exit_status; // The exit status of the last command executed by the shell program
 
-
 // Function prototypes for the shell program
 void init_shell(); // Initializes the shell program by setting up the prompt and current working directory, and setting the exit status to 0
 void read_command(char *command); // Reads a command from standard input and stores it in command, which is assumed to be large enough to hold it (i.e., at least 256 characters)
@@ -65,6 +64,7 @@ int main() {
     // Exit the shell program
     return 0;
 }
+
 // Reads a command from standard input and stores it in command, which is assumed to be large enough to hold it (i.e., at least 256 characters)
 void read_command(char *command) {
     // Read a command from standard input
