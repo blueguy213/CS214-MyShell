@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "*.css": "tailwindcss",
+        "*.ipp": "c",
+        "*.tcc": "c",
+        "iosfwd": "c",
+        "numeric": "c",
+        "functional": "c",
+        "tuple": "c"
+    }
+}

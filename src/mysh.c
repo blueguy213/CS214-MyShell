@@ -1,362 +1,239 @@
+// Implement a basic UNIX shell in C: recursive version
+
+// The shell should parse tokens from the command line with strtok() and execute the command with execv().
+// The shell should support the following built-in commands:
+// - cd
+// - exit
+// - pwd
+
+// The shell should support the following redirection operators:
+// - < (redirect stdin)
+// - > (redirect stdout)
+// - A | B (pipe stdout of command A to stdin of command B)
+
+// The shell should support the following special characters:
+// - * (wildcard)
+
+// After tokenizing the input, the shell should check if the first token is a built-in command.
+// If it is, the shell should execute the built-in command.
+// Else, if the first token is a path to an executable, the shell should execute the executable.
+    // This should be done with stat(), not by traversing the directory tree.
+// Else, if the first token is a path to an executable with a wildcard, the shell should execute the executable.
+    // This should be done with stat(), not by traversing the directory tree.
+// Else, the shell should check if the first token is a valid command in the following directories, in order:
+// - /usr/local/sbin
+// - /usr/local/bin
+// - /usr/sbin
+// - /usr/bin
+// - /sbin
+// - /bin
+// If it is, the shell should execute the executable.
+// Else, the shell should print an error message and set the last error status to 1.
+// Also, if at any point the shell encounters an error, it should print an error message and set the last error status to 1.
+
+// prompt_user(char* prompt);
+// read_line(char* line, char* stdin_string, char* stdout_string);
+// check_command();
+// execute_command();
+
+// // Run a loop of:
+// // - Print a prompt
+// // - Read a line of input
+// // - Parse the input into tokens
+// // - Check if the input is a valid command
+// // - Execute the command
+// // - Repeat
+// int main() {
+
+// }
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/stat.h>
+#include <string.h>
 #include <fcntl.h>
-#include <dirent.h>
-#include <errno.h>
-#include <signal.h>
-#include <stdbool.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 
+#define MAX_ARGS 20
+#define MAX_LENGTH 100
 
-// Global variables for the shell program
-char *prompt; // The prompt to be displayed to the user
-char *curr_dir; // The current working directory of the shell program
-int exit_status; // The exit status of the last command executed by the shell program
+int execute_command(char* args[], int input_fd, int output_fd);
 
-// Function prototypes for the shell program
-void init_shell(); // Initializes the shell program by setting up the prompt and current working directory, and setting the exit status to 0
-void read_command(char *command); // Reads a command from standard input and stores it in command, which is assumed to be large enough to hold it (i.e., at least 256 characters)
-void parse_command(char *command, char **argv); // Parses command into an array of arguments, argv, which is assumed to be large enough to hold them (i.e., at least 256 elements)
-void execute_command(char **argv); // Executes the command specified by argv, which is assumed to be a valid command name or path name followed by its arguments (if any)
-
-// Function prototypes for built-in commands
-void cd(char **argv); // Changes the current working directory of the shell program to argv[1] if it exists and is accessible, or prints an error message otherwise and sets exit_status to 1 if argv[1] is not specified or does not exist or is inaccessible; otherwise, sets exit_status to 0
-void pwd(); // Prints the current working directory of the shell program to standard output and sets exit_status to 0
-
-
-// Function prototypes for other functions used by execute_command()
-bool is_builtin(char *command); // Returns 1 if command is a built-in command, 0 otherwise; does not modify exit_status
-bool is_executable(char *command); // Returns 1 if command is an executable file in one of the directories in PATH, 0 otherwise; does not modify exit_status
-
-
-// Function prototypes for other functions used by execute_command() and is_executable()
-int check_dir(char *dirname, char *filename); // Returns 1 if filename exists in dirname and can be executed, 0 otherwise; does not modify exit_status
-
-// Function prototypes for other functions used by execute_command() and parse_command()
-int contains(char *str1, char *str2); // Returns 1 if str1 contains str2 as a substring, 0 otherwise; does not modify exit_status
-
-// Main function for the shell program
 int main() {
-    // Initialize the shell program
-    init_shell();
+  char line[MAX_LENGTH];
+  char* args[MAX_ARGS];
+  int input_fd = STDIN_FILENO;
+  int output_fd = STDOUT_FILENO;
+  int i;
 
-    // Run the shell program
-    while (1) {
-        // Print the prompt
-        printf("\n%s> ", prompt);
-
-        // Read a command from standard input
-        char command[256];
-        read_command(command);
-
-        // Parse the command into an array of arguments
-        char *argv[256];
-        parse_command(command, argv);
-
-        // Execute the command
-        execute_command(argv);
+  while (1) {
+    // Print prompt and read input
+    printf("mysh> ");
+    if (fgets(line, MAX_LENGTH, stdin) == NULL) {
+      break;
     }
 
-    // Exit the shell program
-    return 0;
-}
-
-// Reads a command from standard input and stores it in command, which is assumed to be large enough to hold it (i.e., at least 256 characters)
-void read_command(char *command) {
-    // Read a command from standard input
-    fgets(command, 256, stdin);
-
-    // Remove the newline character at the end of the command
-    command[strlen(command) - 1] = '\0';
-
-}
-
-// Initializes the shell program by setting up the prompt and current working directory, and setting the exit status to 0
-void init_shell() {
-    // Set the prompt to "mysh" by default
-    prompt = "mysh";
-
-    // Set the current working directory to the current working directory of the shell program
-    curr_dir = getcwd(NULL, 0);
-
-    // Set the exit status to 0
-    exit_status = 0;
-
-    // Print a welcome message
-    printf("Welcome to mysh!");
-
-    // Print the prompt
-    printf("%s", prompt);
-
-    // Read in input from the user
-    char command[256];
-    read_command(command);
-
-    // Parse the command into an array of arguments
-    char *argv[256];
-    parse_command(command, argv);
-
-    // Execute the command
-    execute_command(argv);
-
-    // Print the prompt
-    printf("%s", prompt);
-}
-
- // Parses command into an array of arguments, argv, which is assumed to be large enough to hold them (i.e., at least 256 elements)
-void parse_command(char *command, char **argv) {
-    // Initialize the array of arguments to NULL
-    for (int i = 0; i < 256; i++) {
-        argv[i] = NULL;
+    // Parse input into arguments
+    char* token = strtok(line, " \n");
+    i = 0;
+    while (token != NULL && i < MAX_ARGS - 1) {
+      args[i] = token;
+      token = strtok(NULL, " \n");
+      i++;
     }
+    args[i] = NULL;
 
-    // Parse the command into an array of arguments
-    int i = 0;
-    char *token = strtok(command, " ");
-    while (token != NULL) {
-        argv[i] = token;
-        token = strtok(NULL, " ");
-        i++;
-    }
-
-    // If the command contains a pipe, parse the command into an array of arguments for the first command
-    if (contains(command, "|")) {
-        // Initialize the array of arguments to NULL
-        for (int i = 0; i < 256; i++) {
-            argv[i] = NULL;
+    // Check for built-in commands
+    if (strcmp(args[0], "cd") == 0) {
+      if (args[1] == NULL) {
+        chdir(getenv("HOME"));
+      } else if (chdir(args[1]) == -1) {
+        perror("cd");
+      }
+      continue;
+    } else if (strcmp(args[0], "exit") == 0) {
+      exit(EXIT_SUCCESS);
+    } else if (strcmp(args[0], "pwd") == 0) {
+        char* cwd = getcwd(NULL, 0);
+        if (cwd == NULL) {
+            perror("pwd");
+        } else {
+            printf("%s\n", cwd);
+            free(cwd);
         }
+        continue;
+    }
 
-        // Parse the command into an array of arguments for the first command
-        int i = 0;
-        char *token = strtok(command, "|");
-        while (token != NULL) {
-            argv[i] = token;
-            token = strtok(NULL, "|");
+    // Check for redirection operators
+    for (i = 0; args[i] != NULL; i++) {
+        if (strcmp(args[i], "<") == 0) {
+            args[i] = NULL;
             i++;
+            if (args[i] == NULL) {
+                fprintf(stderr, "Error: missing input file!\n");
+                goto end_loop;
+            }
+            input_fd = open(args[i], O_RDONLY);
+            if (input_fd == -1) {
+                perror("open");
+                goto end_loop;
+            }
+        } else if (strcmp(args[i], ">") == 0) {
+                args[i] = NULL;
+                i++;
+            if (args[i] == NULL) {
+                fprintf(stderr, "Error: missing output file!\n");
+                goto end_loop;
+            }
+            output_fd = open(args[i], O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+            if (output_fd == -1) {
+                perror("open");
+                goto end_loop;
+            }
         }
     }
 
-    // If the command contains a redirection operator, parse the command into an array of arguments for the first command
-    if (contains(command, ">") || contains(command, "<")) {
-        // Initialize the array of arguments to NULL
-        for (int i = 0; i < 256; i++) {
-            argv[i] = NULL;
-        }
-
-        // Parse the command into an array of arguments for the first command
-        int i = 0;
-        char *token = strtok(command, ">");
-        while (token != NULL) {
-            argv[i] = token;
-            token = strtok(NULL, ">");
-            i++;
-        }
+    // Execute command
+    if (execute_command(args, input_fd, output_fd) == -1) {
+      goto end_loop;
     }
 
-    // If the command contains a redirection operator, parse the command into an array of arguments for the first command
-    if (contains(command, ">") || contains(command, "<")) {
-        // Initialize the array of arguments to NULL
-        for (int i = 0; i < 256; i++) {
-            argv[i] = NULL;
-        }
-
-        // Parse the command into an array of arguments for the first command
-        int i = 0;
-        char *token = strtok(command, "<");
-        while (token != NULL) {
-            argv[i] = token;
-            token = strtok(NULL, "<");
-            i++;
-        }
+    // Cleanup redirection
+    if (input_fd != STDIN_FILENO) {
+      close(input_fd);
+      input_fd = STDIN_FILENO;
     }
+    if (output_fd != STDOUT_FILENO) {
+      close(output_fd);
+      output_fd = STDOUT_FILENO;
+    }
+
+    end_loop:
+        // Reset arguments
+        for (i = 0; args[i] != NULL; i++) {
+        args[i] = NULL;
+        }
+  }
+
+  return EXIT_SUCCESS;
 }
 
-// Executes the command specified by argv, which is assumed to be a valid command name or path name followed by its arguments (if any)
-void execute_command(char** argv) {
-    // If the command is a built-in command, execute it
-    if (is_builtin(argv[0])) {
-        // If the command is "cd", execute it
-        if (strcmp(argv[0], "cd") == 0) {
-            cd(argv);
+// Returns 0 on success, -1 on error
+int execute_command(char* args[], int input_fd, int output_fd) {
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("fork");
+        return -1;
+    } else if (pid == 0) {
+        // Child process
+        if (input_fd != STDIN_FILENO) {
+            dup2(input_fd, STDIN_FILENO);
+            close(input_fd);
+        }
+   
+        if (output_fd != STDOUT_FILENO) {
+            dup2(output_fd, STDOUT_FILENO);
+            close(output_fd);
         }
 
-        // If the command is "pwd", execute it
-        if (strcmp(argv[0], "pwd") == 0) {
-            pwd();
+        // Try to execute command with stat()
+        struct stat st;
+        if (stat(args[0], &st) == 0 && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
+            execv(args[0], args);
+            perror("execv");
+            return -1;
         }
-    }
 
-    // If the command is not a built-in command, execute it
-    else {
-        // If the command is an executable file in one of the directories in PATH, execute it
-        if (is_executable(argv[0])) {
-            // Fork a child process
-            pid_t pid = fork();
-
-            // If the child process was successfully created, execute the command
-            if (pid == 0) {
-                // If the command contains a pipe, execute the command
-                if (contains(argv[0], "|")) {
-                    // Parse the command into an array of arguments for the first command
-                    char *argv1[256];
-                    parse_command(argv[0], argv1);
-
-                    // Parse the command into an array of arguments for the second command
-                    char *argv2[256];
-                    parse_command(argv[1], argv2);
-
-                    // Create a pipe
-                    int pipefd[2];
-                    pipe(pipefd);
-
-                    // Fork a child process
-                    pid_t pid = fork();
-
-                    // If the child process was successfully created, execute the first command
-                    if (pid == 0) {
-                        // Close the read end of the pipe
-                        close(pipefd[0]);
-
-                        // Duplicate the write end of the pipe to standard output
-                        dup2(pipefd[1], STDOUT_FILENO);
-
-                        // Execute the first command
-                        execvp(argv1[0], argv1);
-
-                        // If the first command was not successfully executed, print an error message and exit
-                        printf("mysh: %s: command not found", argv1[0]);
-                        exit(1);
-                    }
+        // Try to execute command with wildcard and stat()
+        int i;
+        char* path = NULL;
+        for (i = 0; args[0][i] != '\0'; i++) {
+            if (args[0][i] == '*') {
+                path = malloc((i + 6) * sizeof(char));
+                if (path == NULL) {
+                    perror("malloc");
+                    return -1;
                 }
+                strncpy(path, args[0], i);
+                strcpy(path + i, "./*");
+                break;
             }
         }
-         else {
-            printf("mysh: %s: command not found", argv[0]);
-            exit_status = 1;
-         }
-    }
-}
-
-// Changes the current working directory of the shell program to argv[1] if it exists and is accessible, or prints an error message otherwise and sets exit_status to 1 if argv[1] is not specified or does not exist or is inaccessible; otherwise, sets exit_status to 0
-void cd(char **argv) {
-    // If argv[1] is not specified, print an error message and set exit_status to 1
-    if (argv[1] == NULL) {
-        printf("mysh: cd: missing operand");
-        exit_status = 1;
-    }
-
-    // If argv[1] does not exist or is inaccessible, print an error message and set exit_status to 1
-    else if (chdir(argv[1]) != 0) {
-        printf("mysh: cd: %s: No such file or directory", argv[1]);
-        exit_status = 1;
-    }
-
-    // Otherwise, set exit_status to 0
-    else {
-        exit_status = 0;
-    }
-}
-
-// Prints the current working directory of the shell program to standard output and sets exit_status to 0
-void pwd() {
-    // Get the current working directory
-    char cwd[256];
-    getcwd(cwd, sizeof(cwd));
-
-    // Print the current working directory
-    printf("%s", cwd);
-
-    // Set exit_status to 0
-    exit_status = 0;
-}
-
-// Returns true if command is a built-in command, or false otherwise
-bool is_builtin(char *command) {
-    // If command is "cd", return true
-    if (strcmp(command, "cd") == 0) {
-        return true;
-    }
-
-    // If command is "pwd", return true
-    if (strcmp(command, "pwd") == 0) {
-        return true;
-    }
-
-    // Otherwise, return false
-    return false;
-}
-
-// Returns true if command is an executable file in one of the directories in PATH, or false otherwise
-bool is_executable(char *command) {
-    // Get the value of the PATH environment variable
-    char *path = getenv("PATH");
-
-    // Parse the value of the PATH environment variable into an array of directories
-    char *directories[256];
-    int i = 0;
-    char *token = strtok(path, ":");
-    while (token != NULL) {
-        directories[i] = token;
-        token = strtok(NULL, ":");
-        i++;
-    }
-
-    // For each directory in the array of directories, check if command is an executable file in that directory
-    for (int i = 0; directories[i] != NULL; i++) {
-        // Get the path to the directory
-        char *directory = directories[i];
-
-        // Get the path to the executable file
-        char *executable = malloc(strlen(directory) + strlen(command) + 2);
-        strcpy(executable, directory);
-        strcat(executable, "/");
-        strcat(executable, command);
-
-        // If command is an executable file in the directory, return true
-        if (access(executable, X_OK) == 0) {
-            return true;
+        if (path != NULL && stat(path, &st) == 0 && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
+            args[0] = path;
+            execv(args[0], args);
+            perror("execv");
+            free(path);
+            return -1;
         }
-    }
+        free(path);
 
-    // Otherwise, return false
-    return false;
-}
-
-// Returns 1 if filename exists in dirname and can be executed, 0 otherwise; does not modify exit_status
-int check_dir(char *dirname, char *filename) {
-    // Open the directory
-    DIR *dir = opendir(dirname);
-
-    // If the directory was successfully opened, check if filename exists in the directory and can be executed
-    if (dir != NULL) {
-        // Read the directory
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL) {
-            // If filename exists in the directory and can be executed, return 1
-            if (strcmp(entry->d_name, filename) == 0 && access(entry->d_name, X_OK) == 0) {
-                return 1;
+        // Try to execute command in directories
+        char* directories[] = {"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"};
+        char filename[MAX_LENGTH];
+        for (i = 0; i < sizeof(directories) / sizeof(char*); i++) {
+            snprintf(filename, MAX_LENGTH, "%s/%s", directories[i], args[0]);
+            if (stat(filename, &st) == 0 && S_ISREG(st.st_mode) && (st.st_mode & S_IXUSR)) {
+                args[0] = filename;
+                execv(args[0], args);
+                perror("execv");
+                return -1;
             }
         }
 
-        // Close the directory
-        closedir(dir);
+        // Command not found
+        fprintf(stderr, "Error: command not found: %s\n", args[0]);
+        return -1;
+    } else {
+        // Parent process
+        int status;
+        // Use wait
+        if (wait(&status) == -1) {
+            perror(args[0]);
+            return -1;
+        }
+        return 0;
     }
-
-    // Otherwise, return 0
-    return 0;
-}
-
- // Returns 1 if str1 contains str2 as a substring, 0 otherwise; does not modify exit_status
-int contains(char *str1, char *str2) {
-    // If str2 is a substring of str1, return 1
-    if (strstr(str1, str2) != NULL) {
-        return 1;
-    }
-
-    // Otherwise, return 0
-    return 0;
 }
